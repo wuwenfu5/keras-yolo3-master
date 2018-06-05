@@ -73,7 +73,7 @@ class YOLO(object):
                                            score_threshold=self.score, iou_threshold=self.iou)
         return boxes, scores, classes
 
-    def detect_image(self, image):
+    def detect_image(self, image, result, frame_count):
         start = time.time()
 
         if self.is_fixed_size:
@@ -104,10 +104,15 @@ class YOLO(object):
                                   size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
         thickness = (image.size[0] + image.size[1]) // 300
 
+        # print('output', out_boxes, out_scores, out_classes)
+
+        # result = [0]
         for i, c in reversed(list(enumerate(out_classes))):
             predicted_class = self.class_names[c]
             box = out_boxes[i]
             score = out_scores[i]
+
+            result.append([frame_count, i, box[0], box[1], box[2] - box[0], box[3] - box[1], score, c])
 
             label = '{} {:.2f}'.format(predicted_class, score)
             draw = ImageDraw.Draw(image)
@@ -138,7 +143,7 @@ class YOLO(object):
 
         end = time.time()
         print(end - start)
-        return image
+        return image, result
 
     def close_session(self):
         self.sess.close()
@@ -154,33 +159,61 @@ def detect_video(yolo, video_path):
     fps = "FPS: ??"
     prev_time = timer()
     frame_count = 0
+    results = []
     while True:
         return_value, frame = vid.read()
-        image = Image.fromarray(frame)
-        image = yolo.detect_image(image)
-        result = np.asarray(image)
-        curr_time = timer()
-        exec_time = curr_time - prev_time
-        prev_time = curr_time
-        accum_time = accum_time + exec_time
-        curr_fps = curr_fps + 1
-        if accum_time > 1:
-            accum_time = accum_time - 1
-            fps = "FPS: " + str(curr_fps)
-            curr_fps = 0
-
-        cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.50, color=(255, 0, 0), thickness=2)
-        cv2.namedWindow("result", cv2.WINDOW_NORMAL)
-        cv2.imshow("result", result)
-
-        # frame_count += 1
-        # cv2.imwrite(str('./logs/%06d.jpg' % frame_count), result)
-        # print('write %06d.jpg' % frame_count)
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if return_value is not True:
+            print('get frame eor')
             break
+        else:
+            image = Image.fromarray(frame)
+            frame_count += 1
+            image, result_ = yolo.detect_image(image, results, frame_count)
+
+
+            # result_[:][0] = frame_count
+            # results.append(result_)
+
+
+            result = np.asarray(image)
+            curr_time = timer()
+            exec_time = curr_time - prev_time
+            prev_time = curr_time
+            accum_time = accum_time + exec_time
+            curr_fps = curr_fps + 1
+            if accum_time > 1:
+                accum_time = accum_time - 1
+                fps = "FPS: " + str(curr_fps)
+                curr_fps = 0
+
+            cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=0.50, color=(255, 0, 0), thickness=2)
+            cv2.namedWindow("result", cv2.WINDOW_NORMAL)
+            cv2.imshow("result", result)
+
+            # frame_count += 1
+            # cv2.imwrite(str('./logs/%06d.jpg' % frame_count), result)
+            # print('write %06d.jpg' % frame_count)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+
     yolo.close_session()
+
+    f = open('./logs/det.txt', 'w')
+    # detections/_out = []
+    for row in results:
+        temp = '%d,%d,%.2f,%.2f,%.2f,%.2f,1,%0.2f,%d,-1' % (
+            row[0], row[1], row[3], row[2], row[5], row[4], row[6], row[7])
+        print(temp, file=f)
+        # print(temp)
+    print('output', results)
+    #     detections_out += [np.r_[row[0], row[1], row[2], row[3], row[4], row[5], 1, row[6], row[7], -1]]
+    #
+    # output_filename = os.path.join('./logs', "det.npy")
+    # np.save(output_filename, np.asarray(detections_out), allow_pickle=False)
+    # print(detections_out)
 
 
 def detect_img(yolo):
